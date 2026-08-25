@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #0A2E36;
+  --secondary: #3F7266;
+  --accent: #00E5A3;
+  --dark: #111827;
+  --light: #F9FAFB;
+  --mid: #E5E7EB;
+}
+
+body {
+  background: var(--light);
+  color: var(--dark);
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Shared input style referenced by ClaudeMdForm */
+.ias-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--mid);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--dark);
+  background: #fff;
+}
+.ias-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 229, 163, 0.15);
+}
