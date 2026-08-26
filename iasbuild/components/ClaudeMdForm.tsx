@@ -43,6 +43,7 @@ export default function ClaudeMdForm() {
   const [data, setData] = useState<ClaudeMdInput>(empty);
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(false);
+  const [needsVerify, setNeedsVerify] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const set = <K extends keyof ClaudeMdInput>(k: K, v: ClaudeMdInput[K]) =>
@@ -73,13 +74,43 @@ export default function ClaudeMdForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error((await res.json()).error || "Send failed");
+      const payload = await res.json().catch(() => ({}));
+
+      // Daily ceiling tripped → subscription paywall.
+      if (res.status === 429 && payload.limited) {
+        window.location.href = payload.redirect || "/paywall";
+        return;
+      }
+      // Soft verify: not the first use and not yet verified → confirm email.
+      if (payload.needsVerify) {
+        setNeedsVerify(true);
+        return;
+      }
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload.error || "Send failed");
+      }
       setDone(true);
     } catch (e: any) {
       setError(e.message || "Something went wrong.");
     } finally {
       setSending(false);
     }
+  }
+
+  if (needsVerify) {
+    return (
+      <div className="rounded-lg border border-[#E5E7EB] bg-white p-8 text-center">
+        <h3 className="text-xl font-semibold text-[#0A2E36]">One quick confirm.</h3>
+        <p className="mt-2 text-[#374151]">
+          You&apos;ve used your first free generation — nice. To keep going, confirm
+          your email: I just sent a link to <strong>{data.email}</strong>. Click it
+          and this file lands in your inbox.
+        </p>
+        <p className="mt-4 font-mono text-xs text-[#6B7280]">
+          Didn&apos;t get it? Check spam or the promotions tab.
+        </p>
+      </div>
+    );
   }
 
   if (done) {
