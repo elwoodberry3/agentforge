@@ -159,7 +159,7 @@ export default function ClaudeMdForm() {
               className="ias-input"
               value={data.projectName}
               onChange={(e) => set("projectName", e.target.value)}
-              placeholder="KzooParking"
+              placeholder="e.g. invoice-triage-agent"
             />
           </Field>
           <Field label="One line: what is it?">
@@ -167,7 +167,7 @@ export default function ClaudeMdForm() {
               className="ias-input"
               value={data.oneLiner}
               onChange={(e) => set("oneLiner", e.target.value)}
-              placeholder="A parking reservation app for event days."
+              placeholder="An agent that reads incoming invoices, flags anomalies, and routes them for approval."
             />
           </Field>
           <Field label="Build type">
@@ -204,7 +204,7 @@ export default function ClaudeMdForm() {
               className="ias-input min-h-[160px]"
               value={data.notes}
               onChange={(e) => set("notes", e.target.value)}
-              placeholder="Users pick a lot, reserve a slot, pay a deposit. Need QR check-in later..."
+              placeholder={`Paste anything — half-formed is fine. Tools it calls, APIs it hits, the framework you're on, models, where it runs, what's tripped you up so far. e.g. "orchestrated agent, calls our billing API + a fraud-check tool, human-in-the-loop on anything over $5k, keeps hallucinating vendor names..."`}
             />
           </Field>
           <Field label="What does 'done' look like?">
@@ -212,7 +212,7 @@ export default function ClaudeMdForm() {
               className="ias-input"
               value={data.primaryGoal}
               onChange={(e) => set("primaryGoal", e.target.value)}
-              placeholder="A working reservation flow that takes a real deposit."
+              placeholder="A working agent that triages a real invoice end-to-end and escalates the edge cases correctly."
             />
           </Field>
         </div>
@@ -245,7 +245,7 @@ export default function ClaudeMdForm() {
               className="ias-input min-h-[90px]"
               value={data.constraints}
               onChange={(e) => set("constraints", e.target.value)}
-              placeholder="No native mobile app. No payments in v1."
+              placeholder="No fine-tuning. Read-only on the billing API. Not building the approval UI in v1."
             />
           </Field>
         </div>
