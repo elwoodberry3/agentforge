@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { readToken } from "@/lib/server/verifyToken";
 import { generateClaudeMd, type ClaudeMdInput, type BuildType } from "@/lib/generateClaudeMd";
+import { renderDeliveryEmail } from "@/lib/deliveryEmail";
 
 /**
  * /api/verify — completes a generation that was held pending email confirmation.
@@ -38,12 +39,25 @@ export async function GET(req: NextRequest) {
     const fileContent = generateClaudeMd(input);
     const base64 = Buffer.from(fileContent, "utf-8").toString("base64");
     const resend = new Resend(apiKey);
+    const firstName =
+      (email.split("@")[0] || "there").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
+    const origin = process.env.PUBLIC_ORIGIN || "https://agentforge.iasbootcamp.com";
+    const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(email)}`;
     try {
       await resend.emails.send({
         from: process.env.SEND_FROM || "IAS <build@elwoodberry.com>",
         to: email,
         subject: `Your CLAUDE.md for ${input.projectName}`,
-        text: `Confirmed — here's your CLAUDE.md for "${input.projectName}". Open the folder in VS Code, install the Claude Code plugin, and prompt it to read the file.\n\n— IAS`,
+        html: renderDeliveryEmail({
+          project_name: input.projectName,
+          first_name: firstName,
+          unsubscribe_url: unsubscribeUrl,
+        }),
+        text: `Confirmed — here's your CLAUDE.md for "${input.projectName}". Save the attached CLAUDE.md into your project root, open the folder in VS Code, install the Claude Code extension, and prompt it to read the file.\n\n— IAS`,
+        headers: {
+          "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
         attachments: [{ filename: "CLAUDE.md", content: base64 }],
       });
     } catch (e) {
@@ -66,6 +80,7 @@ export async function GET(req: NextRequest) {
           email_verified: true,
           verified_at: new Date().toISOString(),
           source: "agentforge-tool",
+          ias_source: "tool_agentforge",
         }),
       });
     } catch (e) {

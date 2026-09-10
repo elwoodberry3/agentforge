@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { generateClaudeMd, type ClaudeMdInput } from "@/lib/generateClaudeMd";
 import { consume, checkOnly, clientIp } from "@/lib/server/rateLimit";
 import { issueToken } from "@/lib/server/verifyToken";
+import { renderDeliveryEmail } from "@/lib/deliveryEmail";
 
 /**
  * /api/send — generate + email the CLAUDE.md, now with the tool's soft-verify +
@@ -118,22 +119,43 @@ export async function POST(req: NextRequest) {
   }
 
   const resend = new Resend(apiKey);
+
+  // Best-effort first name from the email local part, for the greeting.
+  const firstName =
+    (email.split("@")[0] || "there").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
+  const origin = req.headers.get("origin") || process.env.PUBLIC_ORIGIN || "https://agentforge.iasbootcamp.com";
+  const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(email)}`;
+
+  const html = renderDeliveryEmail({
+    project_name: input.projectName,
+    first_name: firstName,
+    unsubscribe_url: unsubscribeUrl,
+  });
+
+  const textFallback = [
+    `Your CLAUDE.md for "${input.projectName}" is attached.`,
+    ``,
+    `Drop it in and start building:`,
+    `1. Save the attached CLAUDE.md into your project's root folder.`,
+    `2. Open the folder in VS Code and install the Claude Code extension.`,
+    `3. Prompt Claude Code: "Read the CLAUDE.md file, then set up the project`,
+    `   and the structure — then we'll start building workflows together."`,
+    ``,
+    `Claude Code reads CLAUDE.md automatically on every session — no config needed.`,
+    `— IAS`,
+  ].join("\n");
+
   try {
     await resend.emails.send({
       from: process.env.SEND_FROM || "IAS <build@elwoodberry.com>",
       to: email,
       subject: `Your CLAUDE.md for ${input.projectName}`,
-      text: [
-        `Here's your CLAUDE.md for "${input.projectName}".`,
-        ``,
-        `Next:`,
-        `1. Open the project folder in VS Code.`,
-        `2. Install the Claude Code for VS Code plugin.`,
-        `3. Prompt Claude Code: "Read the CLAUDE.md file and then set up the project`,
-        `   and the structure, and then we'll start building workflows together."`,
-        ``,
-        `— IAS`,
-      ].join("\n"),
+      html,
+      text: textFallback,
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
       attachments: [{ filename: "CLAUDE.md", content: base64 }],
     });
   } catch (e: any) {
@@ -141,19 +163,31 @@ export async function POST(req: NextRequest) {
   }
 
   // ── HubSpot segmentation via n8n (Rule 1 + Rule 2). Fire-and-forget. ───────
+  // Captures this person as a DEVELOPER (tool_agentforge). Additive by design:
+  // the same email may already be a bootcamp student or a portfolio exec. n8n
+  // upserts by email and resolves the source with resolveRetag() — a live paid
+  // relationship (bootcamp_subscriber) outranks a free tool tag, so a dev who is
+  // also a student keeps their student standing and simply gains the tool usage.
+  // This never overwrites an existing higher-value persona.
   const leadHook = process.env.N8N_TOOL_WEBHOOK_URL;
   if (leadHook) {
     const record = {
       stage: "tool_use",
       tool: "agentforge-claude-md",
       email,
+      first_name: firstName,
       email_verified: alreadyVerified || undefined,
       daily_email_count: gate.emailCount,
       last_used_at: new Date().toISOString(),
-      // n8n decides drip suppression vs tool_user_unconverted based on whether
-      // the contact already exists as a livestream lead. It does NOT enroll an
-      // existing subscriber into any new drip.
+      // Persona + funnel for the universal upsert. `source` is the raw funnel
+      // tag n8n maps to a valid ias_source enum; `ias_source` is the explicit
+      // developer persona so n8n needn't guess. last_asset records the delivery.
       source: "agentforge-tool",
+      ias_source: "tool_agentforge",
+      ias_last_asset: `claude.md:${input.projectName}`,
+      // n8n decides drip suppression vs tool_user_unconverted based on whether
+      // the contact already exists as a livestream/bootcamp lead. It does NOT
+      // enroll an existing subscriber into any new drip.
     };
     try {
       await fetch(leadHook, {
