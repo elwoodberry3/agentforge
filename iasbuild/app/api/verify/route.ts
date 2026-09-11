@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { readToken } from "@/lib/server/verifyToken";
 import { generateClaudeMd, type ClaudeMdInput, type BuildType } from "@/lib/generateClaudeMd";
 import { renderDeliveryEmail } from "@/lib/deliveryEmail";
+import { stashAndSign, downloadUrl } from "@/lib/signedLink";
 
 /**
  * /api/verify — completes a generation that was held pending email confirmation.
@@ -37,12 +38,18 @@ export async function GET(req: NextRequest) {
   const apiKey = process.env.RESEND_API_KEY;
   if (apiKey && input.projectName) {
     const fileContent = generateClaudeMd(input);
-    const base64 = Buffer.from(fileContent, "utf-8").toString("base64");
     const resend = new Resend(apiKey);
     const firstName =
       (email.split("@")[0] || "there").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
     const origin = process.env.PUBLIC_ORIGIN || "https://agentforge.iasbootcamp.com";
     const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(email)}`;
+    const claudeToken = await stashAndSign({
+      content: fileContent,
+      filename: "CLAUDE.md",
+      mime: "text/markdown; charset=utf-8",
+    });
+    const useLink = claudeToken !== null;
+    const claudeMdUrl = useLink ? downloadUrl(origin, claudeToken!) : "#";
     try {
       await resend.emails.send({
         from: process.env.SEND_FROM || "IAS <build@elwoodberry.com>",
@@ -51,14 +58,17 @@ export async function GET(req: NextRequest) {
         html: renderDeliveryEmail({
           project_name: input.projectName,
           first_name: firstName,
+          claude_md_url: claudeMdUrl,
           unsubscribe_url: unsubscribeUrl,
         }),
-        text: `Confirmed — here's your CLAUDE.md for "${input.projectName}". Save the attached CLAUDE.md into your project root, open the folder in VS Code, install the Claude Code extension, and prompt it to read the file.\n\n— IAS`,
+        text: `Confirmed — your CLAUDE.md for "${input.projectName}" is ready. ${useLink ? `Download (expires in 24h): ${claudeMdUrl}` : "It's attached."} Save it into your project root, open the folder in VS Code, install the Claude Code extension, and prompt it to read the file.\n\n— IAS`,
         headers: {
           "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
-        attachments: [{ filename: "CLAUDE.md", content: base64 }],
+        ...(useLink
+          ? {}
+          : { attachments: [{ filename: "CLAUDE.md", content: Buffer.from(fileContent, "utf-8").toString("base64") }] }),
       });
     } catch (e) {
       console.error("[verify] send error:", e);

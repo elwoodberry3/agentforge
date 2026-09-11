@@ -4,6 +4,7 @@ import { generateClaudeMd, type ClaudeMdInput } from "@/lib/generateClaudeMd";
 import { consume, checkOnly, clientIp } from "@/lib/server/rateLimit";
 import { issueToken } from "@/lib/server/verifyToken";
 import { renderDeliveryEmail } from "@/lib/deliveryEmail";
+import { stashAndSign, downloadUrl } from "@/lib/signedLink";
 
 /**
  * /api/send — generate + email the CLAUDE.md, now with the tool's soft-verify +
@@ -111,7 +112,6 @@ export async function POST(req: NextRequest) {
   };
 
   const fileContent = generateClaudeMd(input);
-  const base64 = Buffer.from(fileContent, "utf-8").toString("base64");
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -126,17 +126,30 @@ export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin") || process.env.PUBLIC_ORIGIN || "https://agentforge.iasbootcamp.com";
   const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(email)}`;
 
+  // IAS delivery pattern: link, don't attach. Stash the file behind a signed,
+  // expiring /d/<token> link on our own domain. Fall back to attaching only if
+  // signed links aren't configured (no DOWNLOAD_SECRET / Upstash).
+  const claudeToken = await stashAndSign({
+    content: fileContent,
+    filename: "CLAUDE.md",
+    mime: "text/markdown; charset=utf-8",
+  });
+  const useLink = claudeToken !== null;
+  const claudeMdUrl = useLink ? downloadUrl(origin, claudeToken!) : "#";
+
   const html = renderDeliveryEmail({
     project_name: input.projectName,
     first_name: firstName,
+    claude_md_url: claudeMdUrl,
     unsubscribe_url: unsubscribeUrl,
   });
 
   const textFallback = [
-    `Your CLAUDE.md for "${input.projectName}" is attached.`,
+    `Your CLAUDE.md for "${input.projectName}" is ready.`,
+    useLink ? `Download it here (expires in 24h): ${claudeMdUrl}` : `It's attached to this email.`,
     ``,
     `Drop it in and start building:`,
-    `1. Save the attached CLAUDE.md into your project's root folder.`,
+    `1. Save CLAUDE.md into your project's root folder.`,
     `2. Open the folder in VS Code and install the Claude Code extension.`,
     `3. Prompt Claude Code: "Read the CLAUDE.md file, then set up the project`,
     `   and the structure — then we'll start building workflows together."`,
@@ -156,7 +169,9 @@ export async function POST(req: NextRequest) {
         "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
       },
-      attachments: [{ filename: "CLAUDE.md", content: base64 }],
+      ...(useLink
+        ? {}
+        : { attachments: [{ filename: "CLAUDE.md", content: Buffer.from(fileContent, "utf-8").toString("base64") }] }),
     });
   } catch (e: any) {
     return NextResponse.json({ error: "Failed to send email." }, { status: 502 });
