@@ -34,19 +34,19 @@ function hash(input: string): string {
 
 /** Minimal Upstash REST calls — no SDK dependency, version-stable (raw HTTP). */
 async function redis(command: (string | number)[]): Promise<any> {
+  const stringCommand = command.map((c) => String(c));
   const res = await fetch(REST_URL!, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${REST_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([command]),
+    headers: { Authorization: `Bearer ${REST_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(stringCommand),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Upstash ${res.status}`);
+  if (!res.ok) {
+    const d = await res.text().catch(() => "");
+    throw new Error(`Upstash ${res.status} [rateLimit]: ${d.slice(0, 200)}`);
+  }
   const data = await res.json();
-  // Pipeline response: [{ result }]
-  return Array.isArray(data) ? data[0]?.result : data?.result;
+  return data?.result;
 }
 
 /** INCR a key and set TTL on first write. Returns the new count. */
